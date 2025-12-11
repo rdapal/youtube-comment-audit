@@ -1,0 +1,61 @@
+# ----------------------------------
+# Node / Vite / React
+# ----------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Cache
+.vite/
+.cache/
+*.cache
+
+# Build output
+build/
+coverage/
+
+# ----------------------------------
+# Chrome Extension Specific
+# ----------------------------------
+# Avoid committing packaged zip builds
+*.crx
+*.pem
+*.zip
+
+# Extension development artifacts
+chrome-profile/
+
+# ----------------------------------
+# VS Code / IDE
+# ----------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# JetBrains
+.idea/
+*.iml
+
+# ----------------------------------
+# OS / WSL
+# ----------------------------------
+.DS_Store
+Thumbs.db
+
+# Prevent accidental commits of WSL Windows paths
+mnt/
+
+# ----------------------------------
+# Testing outputs
+# ----------------------------------
+test-output/
+
