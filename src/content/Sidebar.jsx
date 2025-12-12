@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DOMScanner } from './Scraper';
 import { Analyzer } from './Analyzer';
 import { 
   Card, Button, Typography, List, 
-  ThemeProvider, createTheme, CssBaseline, Box, Chip, LinearProgress 
+  ThemeProvider, createTheme, CssBaseline, Box, Chip, LinearProgress, IconButton 
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import SecurityIcon from '@mui/icons-material/Security';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
-// --- CONFIGURATION ---
-const BATCH_SIZE = 50; // Safety limit to prevent API bans, basically google limits us to I think 60 a minute, so we have to batch our API calls.
-const TOXICITY_THRESHOLD = 0.50; // Our threshold of what is considered toxic FEAUTRE POTENTIAL : add slider to modify
+const BATCH_SIZE = 50; 
+const RATE_LIMIT_DELAY = 1200; // Our API limiter - up this if you want more power 
+// this is made for free use of API ~ 1.2 seconds (Safe for 60 QPS limit of API)
 
 const darkTheme = createTheme({
   palette: {
@@ -25,11 +26,12 @@ const darkTheme = createTheme({
 const Sidebar = () => {
   const [comments, setComments] = useState([]);
   const [apiKey, setApiKey] = useState(null);
-  
-  // State for UI Feedback
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  
+  // Keep track of scanned texts to prevent duplicates in the UI
+  const scannedTextCache = useRef(new Set());
 
   useEffect(() => {
     if (chrome.storage && chrome.storage.local) {
@@ -41,61 +43,76 @@ const Sidebar = () => {
 
   const handleScan = async () => {
     if (!apiKey) {
-      alert("⚠️ API Key missing. Please open the extension icon and save your key.");
+      alert("⚠️ API Key missing.");
       return;
     }
 
     setIsScanning(true);
-    setScanStatus('Identifying comments in DOM...');
+    setScanStatus('Reading DOM...');
     
-    // 1. Get ALL DOM elements
+    // 1. Get Candidates
     const allCandidates = DOMScanner.scanVisibleItems();
     
-    // 2. Apply Batch Limit
-    const batch = allCandidates.slice(0, BATCH_SIZE);
+    // 2. Filter Duplicates (Don't re-scan things we already have in the list)
+    const newCandidates = allCandidates.filter(c => !scannedTextCache.current.has(c.text));
     
-    console.log(`Audit: DOM contains ${allCandidates.length} items. Processing batch of ${batch.length}.`);
+    const batch = newCandidates.slice(0, BATCH_SIZE);
 
     if (batch.length === 0) {
-      setScanStatus('No un-scanned comments visible. Scroll down!');
+      setScanStatus('No new comments visible. Scroll down!');
       setIsScanning(false);
       return;
     }
 
-    // Init Progress
     setProgress({ current: 0, total: batch.length });
-    
     const toxicCandidates = [];
 
     // 3. Process Batch
     for (let i = 0; i < batch.length; i++) {
       const item = batch[i];
-      
-      // Update UI Progress
       setProgress({ current: i + 1, total: batch.length });
-      setScanStatus(`Analyzing...`);
+      setScanStatus(`Analyzing (${i+1}/${batch.length})...`);
 
       try {
-        // Rate Limit Protection: 1 request every 100ms (approx 10/sec) lower than google limit
-        // If you get lots of errors in console, increase this number. Could be us timing out.
-        await new Promise(r => setTimeout(r, 100)); 
+        // RATE LIMITER
+        await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY)); 
 
-        const score = await Analyzer.checkToxicity(item.text, apiKey);
+        const scores = await Analyzer.checkToxicity(item.text, apiKey);
 
-        // --- DEBUG LOGGING ---
-        // Look at your Chrome Developer Console to see these!
-        console.log(`[${i+1}/${batch.length}] Score: ${score.toFixed(2)} | Text: "${item.text.substring(0, 30)}..."`);
+        // --- AUDIT HEURISTIC ---
+        // 1. SEVERE_TOXICITY (Hate speech, threats) -> Always flag if > 0.4
+        // 2. INSULT (Personal attacks) -> Flag if > 0.6
+        // 3. TOXICITY (General) -> Only flag if VERY high (> 0.8) to avoid false positives Ex : "you're killing it" = +- 70%.
         
-        if (score > TOXICITY_THRESHOLD) {
-          toxicCandidates.push({ ...item, score: score.toFixed(2) });
+        const isToxic = 
+          scores.severeToxicity > 0.4 || 
+          scores.insult > 0.6 || 
+          scores.toxicity > 0.85;
+
+        console.log(`[${i+1}] "${item.text.substring(0, 15)}..." | Tox:${scores.toxicity.toFixed(2)} Ins:${scores.insult.toFixed(2)} Sev:${scores.severeToxicity.toFixed(2)} | Flagged: ${isToxic}`);
+        
+        // Add to cache so we don't scan again
+        scannedTextCache.current.add(item.text);
+
+        if (isToxic) {
+          toxicCandidates.push({ 
+            ...item, 
+            scores: scores 
+          });
         }
       } catch (err) {
-        console.error("API Error for item:", item, err);
+        if (err.message === "RATE_LIMIT") {
+          console.warn("Hit Rate Limit. Pausing for 5 seconds...");
+          await new Promise(r => setTimeout(r, 5000));
+          i--; // Retry this item
+        } else {
+          console.error(err);
+        }
       }
     }
 
     setComments(prev => [...prev, ...toxicCandidates]);
-    setScanStatus(toxicCandidates.length > 0 ? `Found ${toxicCandidates.length} potential issues.` : 'Batch clean. Scroll down & scan again.');
+    setScanStatus(toxicCandidates.length > 0 ? `Found ${toxicCandidates.length} issues.` : 'Batch clean.');
     setIsScanning(false);
   };
 
@@ -105,6 +122,10 @@ const Sidebar = () => {
       DOMScanner.deleteItem(target.deleteButtonRef);
       setComments(prev => prev.filter(c => c.id !== id));
     }
+  };
+
+  const handleIgnore = (id) => {
+    setComments(prev => prev.filter(c => c.id !== id));
   };
 
   return (
@@ -118,16 +139,11 @@ const Sidebar = () => {
         borderLeft: '1px solid #333',
         display: 'flex', flexDirection: 'column', padding: 3
       }}>
-        
-        {/* Header */}
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
           <SecurityIcon color="primary" sx={{ fontSize: 30, mr: 1.5 }} />
-          <Typography variant="h6" fontWeight="bold">
-            YouTube Comment Audit
-          </Typography>
+          <Typography variant="h6" fontWeight="bold">Comment Audit</Typography>
         </Box>
 
-        {/* Actions */}
         <Button 
           variant="contained" 
           color="primary" 
@@ -140,53 +156,39 @@ const Sidebar = () => {
           {isScanning ? `Analyzing ${progress.current}/${progress.total}` : "Scan Next 50 Items"}
         </Button>
         
-        {isScanning && (
-          <LinearProgress 
-            variant="determinate" 
-            value={(progress.current / progress.total) * 100} 
-            sx={{ mb: 2, borderRadius: 1 }}
-          />
-        )}
+        {isScanning && <LinearProgress variant="determinate" value={(progress.current / progress.total) * 100} sx={{ mb: 2 }} />}
         
         <Typography variant="caption" color="textSecondary" sx={{ mb: 2, display: 'block', textAlign: 'center' }}>
-          {scanStatus || "Scroll down to load comments, then Scan."}
+          {scanStatus}
         </Typography>
 
-        {/* Results List */}
         <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
           <List>
             {comments.map((comment) => (
               <Card 
                 key={comment.id} 
                 variant="outlined" 
-                sx={{ 
-                  mb: 2, p: 2, 
-                  borderColor: comment.score > 0.8 ? '#ff4444' : 'rgba(255,255,255,0.1)',
-                  backgroundColor: 'rgba(255,255,255,0.02)'
-                }}
+                sx={{ mb: 2, p: 2, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.02)' }}
               >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Chip 
-                    label={`${(comment.score * 100).toFixed(0)}% TOXIC`} 
-                    color={comment.score > 0.8 ? "error" : "warning"} 
-                    size="small" 
-                  />
+                <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                  {comment.scores.severeToxicity > 0.4 && <Chip label="HATE" color="error" size="small" />}
+                  {comment.scores.insult > 0.6 && <Chip label="INSULT" color="warning" size="small" />}
+                  {comment.scores.toxicity > 0.8 && <Chip label="TOXIC" color="default" size="small" />}
                 </Box>
                 
-                <Typography variant="body2" sx={{ mb: 2, color: '#e0e0e0' }}>
-                  "{comment.text}"
-                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, color: '#e0e0e0' }}>"{comment.text}"</Typography>
                 
-                <Button 
-                  startIcon={<DeleteIcon />} 
-                  color="error" 
-                  size="small"
-                  variant="outlined"
-                  onClick={() => handleDelete(comment.id)}
-                  fullWidth
-                >
-                  Delete permanently
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button 
+                    startIcon={<DeleteIcon />} color="error" variant="outlined" 
+                    onClick={() => handleDelete(comment.id)} fullWidth
+                  >
+                    Delete
+                  </Button>
+                  <IconButton onClick={() => handleIgnore(comment.id)} size="small">
+                    <VisibilityOffIcon />
+                  </IconButton>
+                </Box>
               </Card>
             ))}
           </List>
