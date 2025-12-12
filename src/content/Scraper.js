@@ -16,32 +16,41 @@ export const DOMScanner = {
     const candidates = [];
 
     deleteButtons.forEach((btn, index) => {
-      // Avoid re-scanning items we already processed (add a data-attribute to mark them)
+      // Avoid re-scanning items
       if (btn.dataset.detoxScanned) return;
 
-      // 2. Traverse up to the container (The comment "card")
-      // The hierarchy usually changes, so we use closest() or parentElement safety checks
+      // 2. Traverse up to the container (The "Card")
+      // We look for a container that has role="article" OR is a few levels up
       const card = btn.closest('[role="article"]') || btn.parentElement?.parentElement?.parentElement;
 
       if (card) {
-        // 3. Extract Text
-        // We clean newlines to make sending to API cheaper/cleaner
-        const rawText = card.innerText || "";
-        const cleanText = rawText
-          .replace(/Delete activity item/gi, "")
-          .replace(/YouTube comment/gi, "")
-          .replace(/\n/g, " ")
-          .trim();
+        // 3. Smart Text Extraction
+        // We split by newlines to separate headers from content
+        const rawLines = card.innerText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+        
+        // HEURISTIC: The comment is usually the longest line that isn't a known header
+        const likelyComment = rawLines.find(line => {
+          // Filter out known Google headers
+          if (line.includes("YouTube comment")) return false;
+          if (line.includes("You commented on")) return false;
+          if (line.includes("• Details")) return false;
+          if (line.match(/^[A-Z][a-z]{2}\s\d{1,2},\s\d{4}/)) return false; // Date regex (e.g. Dec 12, 2025)
+          if (line === "Delete") return false;
+          return true;
+        });
 
-        if (cleanText.length > 2) { // Ignore empty or tiny artifacts
+        // Fallback: If heuristic fails, just take the raw text but clean it
+        const finalDelayText = likelyComment || rawLines.join(" ");
+
+        if (finalDelayText && finalDelayText.length > 1) { 
            candidates.push({
             id: `comment_${index}_${Date.now()}`,
-            text: cleanText,
-            deleteButtonRef: btn // Store the reference to the DOM element
+            text: finalDelayText, // Send this cleaner text to API
+            deleteButtonRef: btn 
           });
         }
         
-        // Mark as scanned in DOM so we don't duplicate on next scroll
+        // Mark as scanned
         btn.dataset.detoxScanned = "true";
       }
     });
@@ -58,7 +67,7 @@ export const DOMScanner = {
     if (buttonElement && buttonElement.click) {
       buttonElement.click();
       // We just click the delete x which as of 12/11/2025 is the way to delete from the history page
-      console.log("Attempting deletion...");
+      console.log("Audit: Deleted item.");
     }
   }
 };

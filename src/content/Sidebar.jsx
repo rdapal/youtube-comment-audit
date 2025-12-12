@@ -2,37 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { DOMScanner } from './Scraper';
 import { Analyzer } from './Analyzer';
 import { 
-  Card, Button, Typography, List, IconButton, 
-  ThemeProvider, createTheme, CssBaseline, Box, Chip, CircularProgress 
+  Card, Button, Typography, List, 
+  ThemeProvider, createTheme, CssBaseline, Box, Chip, LinearProgress 
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SecurityIcon from '@mui/icons-material/Security';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 
-// Create a dark theme that matches YouTube
+// --- CONFIGURATION ---
+const BATCH_SIZE = 50; // Safety limit to prevent API bans, basically google limits us to I think 60 a minute, so we have to batch our API calls.
+const TOXICITY_THRESHOLD = 0.50; // Our threshold of what is considered toxic FEAUTRE POTENTIAL : add slider to modify
+
 const darkTheme = createTheme({
   palette: {
     mode: 'dark',
-    primary: {
-      main: '#ff0033', // YouTube Red
-    },
-    background: {
-      paper: '#0f0f0f', // YouTube Dark Background
-      default: '#0f0f0f',
-    },
+    primary: { main: '#ff0033' },
+    background: { paper: '#0f0f0f', default: '#0f0f0f' },
   },
-  typography: {
-    fontFamily: 'Roboto, Arial, sans-serif',
-  },
+  typography: { fontFamily: 'Roboto, Arial, sans-serif' },
 });
 
 const Sidebar = () => {
   const [comments, setComments] = useState([]);
   const [apiKey, setApiKey] = useState(null);
+  
+  // State for UI Feedback
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
 
-  // Load API Key on mount
   useEffect(() => {
     if (chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(['perspectiveApiKey'], (result) => {
@@ -48,41 +46,56 @@ const Sidebar = () => {
     }
 
     setIsScanning(true);
-    setScanStatus('Scanning DOM...');
+    setScanStatus('Identifying comments in DOM...');
     
-    // DEBUG LOG
-    console.log("Audit: Starting scan...");
+    // 1. Get ALL DOM elements
+    const allCandidates = DOMScanner.scanVisibleItems();
+    
+    // 2. Apply Batch Limit
+    const batch = allCandidates.slice(0, BATCH_SIZE);
+    
+    console.log(`Audit: DOM contains ${allCandidates.length} items. Processing batch of ${batch.length}.`);
 
-    // 1. Get DOM elements
-    const candidates = DOMScanner.scanVisibleItems();
-    console.log(`Audit: Found ${candidates.length} candidates`);
-    
-    if (candidates.length === 0) {
-      setScanStatus('No visible comments found. Scroll down!');
+    if (batch.length === 0) {
+      setScanStatus('No un-scanned comments visible. Scroll down!');
       setIsScanning(false);
       return;
     }
 
-    setScanStatus(`Analyzing ${candidates.length} items...`);
+    // Init Progress
+    setProgress({ current: 0, total: batch.length });
     
     const toxicCandidates = [];
 
-    // 2. Check each one
-    for (const item of candidates) {
-      // Small artificial delay to prevent rate limiting
-      await new Promise(r => setTimeout(r, 50)); 
+    // 3. Process Batch
+    for (let i = 0; i < batch.length; i++) {
+      const item = batch[i];
       
-      const score = await Analyzer.checkToxicity(item.text, apiKey);
-      console.log(`Audit: "${item.text.substring(0, 20)}..." Score: ${score}`);
+      // Update UI Progress
+      setProgress({ current: i + 1, total: batch.length });
+      setScanStatus(`Analyzing...`);
 
-      // THRESHOLD: Show if > 60% toxic
-      if (score > 0.6) {
-        toxicCandidates.push({ ...item, score: score.toFixed(2) });
+      try {
+        // Rate Limit Protection: 1 request every 100ms (approx 10/sec) lower than google limit
+        // If you get lots of errors in console, increase this number. Could be us timing out.
+        await new Promise(r => setTimeout(r, 100)); 
+
+        const score = await Analyzer.checkToxicity(item.text, apiKey);
+
+        // --- DEBUG LOGGING ---
+        // Look at your Chrome Developer Console to see these!
+        console.log(`[${i+1}/${batch.length}] Score: ${score.toFixed(2)} | Text: "${item.text.substring(0, 30)}..."`);
+        
+        if (score > TOXICITY_THRESHOLD) {
+          toxicCandidates.push({ ...item, score: score.toFixed(2) });
+        }
+      } catch (err) {
+        console.error("API Error for item:", item, err);
       }
     }
 
     setComments(prev => [...prev, ...toxicCandidates]);
-    setScanStatus(toxicCandidates.length > 0 ? 'Scan complete.' : 'No toxic comments found in this batch.');
+    setScanStatus(toxicCandidates.length > 0 ? `Found ${toxicCandidates.length} potential issues.` : 'Batch clean. Scroll down & scan again.');
     setIsScanning(false);
   };
 
@@ -98,19 +111,12 @@ const Sidebar = () => {
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <Box sx={{
-        position: 'fixed', 
-        right: 0, 
-        top: 0, 
-        width: '400px', 
-        height: '100vh',
-        backgroundColor: 'rgba(15, 15, 15, 0.95)', // Glass effect
-        backdropFilter: 'blur(10px)',
-        zIndex: 2147483647, // Max Z-Index to stay on top
+        position: 'fixed', right: 0, top: 0, width: '400px', height: '100vh',
+        backgroundColor: 'rgba(15, 15, 15, 0.98)',
+        zIndex: 2147483647,
         boxShadow: '-4px 0 20px rgba(0,0,0,0.5)',
         borderLeft: '1px solid #333',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: 3
+        display: 'flex', flexDirection: 'column', padding: 3
       }}>
         
         {/* Header */}
@@ -128,17 +134,23 @@ const Sidebar = () => {
           onClick={handleScan} 
           disabled={isScanning}
           fullWidth
-          startIcon={isScanning ? <CircularProgress size={20} color="inherit"/> : <CleaningServicesIcon />}
-          sx={{ py: 1.5, mb: 2, fontWeight: 'bold' }}
+          startIcon={isScanning ? null : <CleaningServicesIcon />}
+          sx={{ py: 1.5, mb: 1, fontWeight: 'bold' }}
         >
-          {isScanning ? "Auditing..." : "Scan Visible Page"}
+          {isScanning ? `Analyzing ${progress.current}/${progress.total}` : "Scan Next 50 Items"}
         </Button>
         
-        {scanStatus && (
-          <Typography variant="caption" color="textSecondary" sx={{ mb: 2, display: 'block', textAlign: 'center' }}>
-            {scanStatus}
-          </Typography>
+        {isScanning && (
+          <LinearProgress 
+            variant="determinate" 
+            value={(progress.current / progress.total) * 100} 
+            sx={{ mb: 2, borderRadius: 1 }}
+          />
         )}
+        
+        <Typography variant="caption" color="textSecondary" sx={{ mb: 2, display: 'block', textAlign: 'center' }}>
+          {scanStatus || "Scroll down to load comments, then Scan."}
+        </Typography>
 
         {/* Results List */}
         <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
@@ -148,22 +160,20 @@ const Sidebar = () => {
                 key={comment.id} 
                 variant="outlined" 
                 sx={{ 
-                  mb: 2, 
-                  p: 2, 
-                  borderColor: 'rgba(255,255,255,0.1)',
+                  mb: 2, p: 2, 
+                  borderColor: comment.score > 0.8 ? '#ff4444' : 'rgba(255,255,255,0.1)',
                   backgroundColor: 'rgba(255,255,255,0.02)'
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Chip 
                     label={`${(comment.score * 100).toFixed(0)}% TOXIC`} 
-                    color="error" 
+                    color={comment.score > 0.8 ? "error" : "warning"} 
                     size="small" 
-                    variant="outlined" 
                   />
                 </Box>
                 
-                <Typography variant="body2" sx={{ mb: 2, color: '#e0e0e0', fontStyle: 'italic' }}>
+                <Typography variant="body2" sx={{ mb: 2, color: '#e0e0e0' }}>
                   "{comment.text}"
                 </Typography>
                 
@@ -171,22 +181,15 @@ const Sidebar = () => {
                   startIcon={<DeleteIcon />} 
                   color="error" 
                   size="small"
-                  variant="text"
+                  variant="outlined"
                   onClick={() => handleDelete(comment.id)}
                   fullWidth
-                  sx={{ justifyContent: 'flex-start' }}
                 >
                   Delete permanently
                 </Button>
               </Card>
             ))}
           </List>
-          
-          {comments.length === 0 && !isScanning && (
-             <Typography variant="body2" color="textSecondary" textAlign="center" mt={4}>
-               Scroll down on the page to load more comments, then click Scan.
-             </Typography>
-          )}
         </Box>
       </Box>
     </ThemeProvider>
