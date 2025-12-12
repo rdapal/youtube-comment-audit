@@ -19,33 +19,33 @@ export const DOMScanner = {
       // Avoid re-scanning items
       if (btn.dataset.detoxScanned) return;
 
-      // 2. Traverse up to the container (The "Card")
-      // We look for a container that has role="article" OR is a few levels up
-      const card = btn.closest('[role="article"]') || btn.parentElement?.parentElement?.parentElement;
+            // 2. Traversal: Go up exactly 4 levels based on debugging
+      // Level 1: div -> Level 2: div -> Level 3: Header -> Level 4: Content Container
+      const card = btn.parentElement?.parentElement?.parentElement?.parentElement;
 
       if (card) {
-        // 3. Smart Text Extraction
-        // We split by newlines to separate headers from content
+        // 3. Extract and Clean Text
+        // We split by newlines (or implicit block breaks) to separate the metadata
         const rawLines = card.innerText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
         
-        // HEURISTIC: The comment is usually the longest line that isn't a known header
+        // HEURISTIC: Find the user's content line
         const likelyComment = rawLines.find(line => {
-          // Filter out known Google headers
-          if (line.includes("YouTube comment")) return false;
-          if (line.includes("You commented on")) return false;
-          if (line.includes("• Details")) return false;
-          if (line.match(/^[A-Z][a-z]{2}\s\d{1,2},\s\d{4}/)) return false; // Date regex (e.g. Dec 12, 2025)
-          if (line === "Delete") return false;
+          // --- IGNORE LIST ---
+          if (line === "YouTube") return false;               // The Logo text
+          if (line === "YouTube comment") return false;       // Old header style
+          if (line.startsWith("Commented on")) return false;  // Context line
+          if (line.startsWith("You commented on")) return false;
+          if (line.includes("• Details")) return false;       // Timestamp footer
+          if (line === "Delete") return false;                // Button text
+          
+          // If it's not any of those, it's the comment!
           return true;
         });
 
-        // Fallback: If heuristic fails, just take the raw text but clean it
-        const finalDelayText = likelyComment || rawLines.join(" ");
-
-        if (finalDelayText && finalDelayText.length > 1) { 
+        if (likelyComment && likelyComment.length > 0) { 
            candidates.push({
             id: `comment_${index}_${Date.now()}`,
-            text: finalDelayText, // Send this cleaner text to API
+            text: likelyComment,
             deleteButtonRef: btn 
           });
         }
