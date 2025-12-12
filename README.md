@@ -1,16 +1,20 @@
-# React + Vite
+# Youtube Comment Audit: AI-Powered YouTube History Cleaner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Privacy Control tool that utilizes Semantic Analysis (Google Perspective API) to identify and delete offensive comments from your YouTube history without wiping your entire digital footprint.
 
-Currently, two official plugins are available:
+## Features
+- **Semantic Heuristics:** Uses Perspective API's Transformer-based models to detect toxicity, not just keyword matching.
+- **Comment FLagging:** Users review flagged comments before deletion and can confirm for individual comments.
+- **React Overlay:** Creates a usable dashboard into `myactivity.google.com`.
+- **Privacy:** Your data is analyzed using your own API key; no data is saved anywhere besides by Google which already has your comment history.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Tech Stack
+- **Core:** React 18, Vite, Manifest V3
+- **Analysis:** Google Perspective API (TensorFlow models)
+- **DOM:** Custom scraping heuristics to handle obfuscated React class names.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Installation Guide
+1. Clone the repo.
+2. Run `npm install` and `npm run build`.
+3. Open Chrome -> Extensions -> Load Unpacked -> Select `dist` folder.
+4. Get a free API Key from [Google Cloud Console](https://console.cloud.google.com/).
