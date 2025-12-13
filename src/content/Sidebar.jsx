@@ -2,17 +2,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { DOMScanner } from './Scraper';
 import { Analyzer } from './Analyzer';
 import { 
-  Card, Button, Typography, List, 
+  Card, Button, Typography, List, FormControlLabel, Switch, 
   ThemeProvider, createTheme, CssBaseline, Box, Chip, LinearProgress, IconButton 
 } from '@mui/material';
+// Icons
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import SecurityIcon from '@mui/icons-material/Security';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
 
 const BATCH_SIZE = 50; 
 const RATE_LIMIT_DELAY = 1200; // Our API limiter - up this if you want more power 
 // this is made for free use of API ~ 1.2 seconds (Safe for 60 QPS limit of API)
+const SCROLL_DELAY = 3000; // 3 second wait after scrolling to load more comments
 
 const darkTheme = createTheme({
   palette: {
@@ -24,14 +27,26 @@ const darkTheme = createTheme({
 });
 
 const Sidebar = () => {
-  const [comments, setComments] = useState([]);
+  const [comments, setComments] = useState([]); // ONLY toxic ones
   const [apiKey, setApiKey] = useState(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState('');
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
   
-  // Keep track of scanned texts to prevent duplicates in the UI
+  // State for Infinite Loop
+  const [isScanning, setIsScanning] = useState(false);
+  const [isInfiniteMode, setIsInfiniteMode] = useState(false);
+  const [stopSignal, setStopSignal] = useState(false); // Kill switch
+
+  // Stats
+  const [scanStatus, setScanStatus] = useState('');
+  const [stats, setStats] = useState({ scanned: 0, toxicFound: 0 });
+
+  // Cache to prevent duplicate API calls (String Set)
   const scannedTextCache = useRef(new Set());
+  // Ref to access current state inside async loops
+  const isInfiniteRef = useRef(isInfiniteMode);
+
+  useEffect(() => {
+    isInfiniteRef.current = isInfiniteMode;
+  }, [isInfiniteMode]);
 
   useEffect(() => {
     if (chrome.storage && chrome.storage.local) {
@@ -41,43 +56,86 @@ const Sidebar = () => {
     }
   }, []);
 
-  const handleScan = async () => {
-    if (!apiKey) {
-      alert("⚠️ API Key missing.");
-      return;
-    }
+  // --- THE SCROLL HELPER ---
+  const attemptScrollDown = async () => {
+    setScanStatus('Scrolling to load more...');
+    const previousHeight = document.body.scrollHeight;
+    
+    window.scrollTo(0, document.body.scrollHeight);
+    
+    // Wait for network to load comments
+    await new Promise(r => setTimeout(r, SCROLL_DELAY));
+    
+    const newHeight = document.body.scrollHeight;
+    // Return true if we actually loaded new stuff
+    return newHeight > previousHeight;
+  };
 
+  // Main AUDIT logic
+  const startAudit = async () => {
+    if (!apiKey) return alert("⚠️ API Key missing.");
+    
     setIsScanning(true);
-    setScanStatus('Reading DOM...');
+    setStopSignal(false);
     
-    // 1. Get Candidates
-    const allCandidates = DOMScanner.scanVisibleItems();
-    
-    // 2. Filter Duplicates (Don't re-scan things we already have in the list)
-    const newCandidates = allCandidates.filter(c => !scannedTextCache.current.has(c.text));
-    
-    const batch = newCandidates.slice(0, BATCH_SIZE);
+    // THE MAIN LOOP
+    while (true) {
+      if (stopSignal) break; // User clicked Stop
 
-    if (batch.length === 0) {
-      setScanStatus('No new comments visible. Scroll down!');
-      setIsScanning(false);
-      return;
+      setScanStatus('Scanning DOM...');
+      
+      // 1. Scan DOM
+      const allCandidates = DOMScanner.scanVisibleItems();
+      
+      // 2. Filter out texts we have ALREADY checked in previous batches
+      const freshCandidates = allCandidates.filter(c => !scannedTextCache.current.has(c.text));
+      
+      console.log(`Audit: Found ${allCandidates.length} total, ${freshCandidates.length} new.`);
+
+      // 3. If we have fresh items, process them
+      if (freshCandidates.length > 0) {
+        // Take a batch
+        const batch = freshCandidates.slice(0, BATCH_SIZE);
+        await processBatch(batch);
+        
+        // If user wanted to stop during the batch
+        if (stopSignal) break; 
+      } 
+      
+      // 4. Decision Time: Done or Scroll?
+      if (freshCandidates.length < BATCH_SIZE) {
+        if (isInfiniteRef.current) {
+          const success = await attemptScrollDown();
+          if (!success) {
+            setScanStatus('End of history reached.');
+            break; 
+          }
+        } else {
+          setScanStatus('Batch done. Scroll for more.');
+          break; 
+        }
+      }
     }
 
-    setProgress({ current: 0, total: batch.length });
-    const toxicCandidates = [];
+    setIsScanning(false);
+    setStopSignal(false);
+  };
 
-    // 3. Process Batch
+  const processBatch = async (batch) => {
+    const toxicBatch = [];
+
     for (let i = 0; i < batch.length; i++) {
+      if (stopSignal) return;
+
       const item = batch[i];
-      setProgress({ current: i + 1, total: batch.length });
-      setScanStatus(`Analyzing (${i+1}/${batch.length})...`);
-
+      setScanStatus(`Analyzing (${i+1}/${batch.length}) in batch...`);
+      
       try {
-        // RATE LIMITER
-        await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY)); 
-
+        await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY));
         const scores = await Analyzer.checkToxicity(item.text, apiKey);
+        
+        // Mark as processed so we never check this text again
+        scannedTextCache.current.add(item.text);
 
         // --- AUDIT HEURISTIC ---
         // 1. SEVERE_TOXICITY (Hate speech, threats) -> Always flag if > 0.4
@@ -91,29 +149,39 @@ const Sidebar = () => {
 
         console.log(`[${i+1}] "${item.text.substring(0, 15)}..." | Tox:${scores.toxicity.toFixed(2)} Ins:${scores.insult.toFixed(2)} Sev:${scores.severeToxicity.toFixed(2)} | Flagged: ${isToxic}`);
         
-        // Add to cache so we don't scan again
-        scannedTextCache.current.add(item.text);
+        
+        // Update Scan Count Stats
+        setStats(prev => ({ ...prev, scanned: prev.scanned + 1 }));
 
         if (isToxic) {
-          toxicCandidates.push({ 
-            ...item, 
-            scores: scores 
-          });
+          // Push to local batch array
+          toxicBatch.push({ ...item, scores });
+          
+          // Update Toxic Count Stats
+          setStats(prev => ({ ...prev, toxicFound: prev.toxicFound + 1 }));
+          
+          // Debug Log
+          console.log(`[FLAGGED] "${item.text.substring(0,20)}..." | Tox:${scores.toxicity}`);
         }
+
       } catch (err) {
         if (err.message === "RATE_LIMIT") {
-          console.warn("Hit Rate Limit. Pausing for 5 seconds...");
-          await new Promise(r => setTimeout(r, 5000));
-          i--; // Retry this item
+           console.warn("Rate Limit hit. Pausing 5s...");
+           await new Promise(r => setTimeout(r, 5000));
+           i--; // Retry this item
         } else {
-          console.error(err);
+           console.error("API Error", err);
         }
       }
     }
 
-    setComments(prev => [...prev, ...toxicCandidates]);
-    setScanStatus(toxicCandidates.length > 0 ? `Found ${toxicCandidates.length} issues.` : 'Batch clean.');
-    setIsScanning(false);
+    // Add found toxic items to the main UI list
+    setComments(prev => [...prev, ...toxicBatch]);
+  };
+
+  const handleStop = () => {
+    setStopSignal(true);
+    setScanStatus('Stopping...');
   };
 
   const handleDelete = (id) => {
@@ -139,29 +207,70 @@ const Sidebar = () => {
         borderLeft: '1px solid #333',
         display: 'flex', flexDirection: 'column', padding: 3
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        {/* HEADER */}
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <SecurityIcon color="primary" sx={{ fontSize: 30, mr: 1.5 }} />
           <Typography variant="h6" fontWeight="bold">Comment Audit</Typography>
         </Box>
 
-        <Button 
-          variant="contained" 
-          color="primary" 
-          onClick={handleScan} 
-          disabled={isScanning}
-          fullWidth
-          startIcon={isScanning ? null : <CleaningServicesIcon />}
-          sx={{ py: 1.5, mb: 1, fontWeight: 'bold' }}
-        >
-          {isScanning ? `Analyzing ${progress.current}/${progress.total}` : "Scan Next 50 Items"}
-        </Button>
+        {/* STATS */}
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, bgcolor: '#222', p: 1, borderRadius: 1 }}>
+            <Box>
+                <Typography variant="caption" color="gray">SCANNED</Typography>
+                <Typography variant="h6">{stats.scanned}</Typography>
+            </Box>
+            <Box>
+                <Typography variant="caption" color="gray">TOXIC</Typography>
+                <Typography variant="h6" color="error">{stats.toxicFound}</Typography>
+            </Box>
+        </Box>
+
+        {/* CONTROLS */}
+        <Box sx={{ mb: 2 }}>
+            <FormControlLabel
+                control={
+                    <Switch 
+                        checked={isInfiniteMode} 
+                        onChange={(e) => setIsInfiniteMode(e.target.checked)} 
+                        disabled={isScanning}
+                        color="primary"
+                    />
+                }
+                label={<Typography variant="body2">Infinite Auto-Scroll Mode</Typography>}
+            />
+            
+            {!isScanning ? (
+                <Button 
+                    variant="contained" 
+                    color="primary" 
+                    onClick={startAudit} 
+                    fullWidth
+                    startIcon={<CleaningServicesIcon />}
+                    sx={{ py: 1.5, fontWeight: 'bold' }}
+                >
+                    {isInfiniteMode ? "Start Infinite Audit" : "Scan Visible Page"}
+                </Button>
+            ) : (
+                <Button 
+                    variant="contained" 
+                    color="error" 
+                    onClick={handleStop} 
+                    fullWidth
+                    startIcon={<StopCircleIcon />}
+                    sx={{ py: 1.5, fontWeight: 'bold' }}
+                >
+                    STOP AUDIT
+                </Button>
+            )}
+        </Box>
         
-        {isScanning && <LinearProgress variant="determinate" value={(progress.current / progress.total) * 100} sx={{ mb: 2 }} />}
+        {isScanning && <LinearProgress sx={{ mb: 1 }} />}
         
         <Typography variant="caption" color="textSecondary" sx={{ mb: 2, display: 'block', textAlign: 'center' }}>
           {scanStatus}
         </Typography>
 
+        {/* LIST */}
         <Box sx={{ flexGrow: 1, overflowY: 'auto', pr: 1 }}>
           <List>
             {comments.map((comment) => (
