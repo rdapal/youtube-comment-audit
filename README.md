@@ -73,7 +73,7 @@ This project bridges that gap.
 ![Extension Dashboard](screenshots/dashboard.png)
 
 ### Scanning
-![Flagged Comments](screenshots/flagged-comments.png)
+![Flagged Comments](screenshots/scanning.png)
 
 ### Flagged Comment Review
 ![Analysis Details](screenshots/analysis-details.png)
