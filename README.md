@@ -72,10 +72,10 @@ This project bridges that gap.
 ### Extension Dashboard
 ![Extension Dashboard](screenshots/dashboard.png)
 
-### Flagged Comments Review
+### Scanning
 ![Flagged Comments](screenshots/flagged-comments.png)
 
-### Comment Analysis Details
+### Flagged Comment Review
 ![Analysis Details](screenshots/analysis-details.png)
 
 ---
@@ -94,8 +94,6 @@ This project bridges that gap.
   https://support.perspectiveapi.com/s/request-api-access?language=en_US
 - Enable billing for the project
 
----
-
 ### 2. Clone the Repository
 ```bash
 git clone https://github.com/your-username/youtube-comment-audit
@@ -110,14 +108,20 @@ npm run build
 
 ### 4. Load the Extension in Chrome
 (1) Open Chrome and navigate to chrome://extensions
+
 (2) Enable Developer Mode (top right)
+
 (3) Click Load unpacked
+
 (4) Select the dist/ directory from this project
 
 ### 5. Run an Audit
 (1) Open the extension
+
 (2) Paste your Perspective API key
+
 (3) Go to YouTube Activity page (myactivity.google.com)
+
 (4) Review flagged comments and confirm deletions as desired!
 
 ---
