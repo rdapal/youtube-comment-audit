@@ -2,6 +2,11 @@
 
 A Privacy Control tool that utilizes Semantic Analysis (Google Perspective API) to identify and delete offensive comments from your YouTube history without wiping your entire digital footprint.
 
+## Ethics & Responsible Use
+- Only analyzes publicaly visible comments.
+- No data is stored or trainsmitted beyond API analysis through Google's Perspective API.
+- Designed for research, moderation awarness and UX design.
+
 ## Features
 - **Semantic Heuristics:** Uses Perspective API's Transformer-based models to detect toxicity, not just keyword matching.
 - **Comment FLagging:** Users review flagged comments before deletion and can confirm for individual comments.
