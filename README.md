@@ -1,78 +1,39 @@
-# YouTube Comment Audit  
-**AI-Powered YouTube Comment Moderation & Cleanup Tool**
+# 🧹 YouTube Comment Audit
 
-YouTube Comment Audit is a **client-side Chrome extension** that helps users review and clean up potentially offensive or regrettable YouTube comments from their Google activity history using **semantic analysis powered by Google’s Perspective API**.
+![React](https://img.shields.io/badge/React-19.0-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-7.2-646CFF?logo=vite&logoColor=white)
+![Chrome Extension](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?logo=googlechrome&logoColor=white)
+![AI](https://img.shields.io/badge/AI-Perspective_API-FF6F00)
 
-Unlike YouTube’s bulk deletion tools, this extension emphasizes **user control and transparency**: comments are **flagged for review**, never automatically deleted.
+**An AI-Powered YouTube Comment Moderation & Cleanup Tool**
 
----
+YouTube Comment Audit is a client-side Chrome extension that empowers users to review and clean up potentially offensive or regrettable YouTube comments from their Google Activity history using semantic analysis powered by **Google’s Perspective API**.
 
-## Why This Exists
+Unlike native bulk-deletion tools, this extension emphasizes **user control and transparency**: comments are flagged for review based on contextual AI scoring, but are *never* automatically deleted.
 
-Many users want to:
+## 🚀 Why This Exists
 
-- Review old comments they no longer stand behind
-- Improve their online footprint without deleting everything
-- Avoid time-consuming manual review of years of comments
-- Understand how modern AI models interpret toxicity and intent
-- Reflect on how they present themselves online and make informed changes
+As our digital footprints grow, many users want to:
+* Review old comments they no longer stand behind.
+* Improve their online footprint without wiping their entire history.
+* Avoid the time-consuming manual review of years of fragmented activity logs.
+* Understand how modern NLP models interpret toxicity, threats, and intent.
 
-As of **December 13, 2025**, Google provides powerful moderation models but **no end-user tooling** that integrates them into personal activity review.  
-This project bridges that gap.
+While Google provides powerful moderation models for enterprise platforms, there is a distinct lack of end-user tooling that integrates these models into personal activity review. This project bridges that gap.
 
----
+## ✨ Key Features
 
-## Key Features
-
-### Semantic Comment Analysis
-- Uses **Google Perspective API** (Transformer-based NLP models)
-- Detects toxicity, insults, threats, and abusive language
-- Employs custom heuristics
-- Goes beyond simple keyword matching with contextual AI analysis
-
-### User-Controlled Review
-- Comments are **flagged, never auto-deleted**
-- Users confirm deletions **individually**
-- Clear visibility into **why** a comment was flagged (model scores)
-
-### UI Overlay
-- React-based dashboard injected into `myactivity.google.com`
-- Designed to survive obfuscated class names and minor UI changes
-- Uses custom DOM scraping heuristics
-- Respects native browser themes for accessibility and customization
-
-### Privacy-First Design
-- Users supply **their own API key**
-- API key is stored **locally in the browser**
-- No analytics, tracking, or third-party servers
-- No data persistence beyond Google’s API processing
+* **Semantic Comment Analysis:** Integrates Google's Transformer-based Perspective API to detect toxicity, severe insults, and abusive language, going far beyond simple keyword matching.
+* **User-Controlled Review:** Comments are flagged with specific model scores. Users must confirm deletions individually, ensuring complete control over their data.
+* **Resilient UI Overlay:** A React-based dashboard injected directly into `myactivity.google.com`, designed to survive obfuscated class names and respect native browser themes for accessibility.
+* **Privacy-First Architecture:** Users supply their own API key, which is stored locally in the browser via Chrome Storage. There are no analytics, no tracking, and no third-party databases.
 
 ---
 
-## Ethics & Responsible Use
+## 📸 Interface
 
-- Analyzes **only publicly visible comments**
-- No background automation or silent actions
-- No scraping beyond the active page
-- No credential interception
-- Designed for research, moderation awareness, and UX design
-
----
-
-## Tech Stack
-
-- **Core:** React 18, Vite, Chrome Manifest V3
-- **Analysis:** Google Perspective API (TensorFlow-based models)
-- **DOM Handling:** Custom scraping heuristics for dynamic React UIs
-
----
-
-## Screenshots
-
-### Extension Dashboard
+### Extension Dashboard & Scanning
 ![Extension Dashboard](screenshots/dashboard.png)
-
-### Scanning
 ![Flagged Comments](screenshots/scanning.png)
 
 ### Flagged Comment Review
@@ -80,50 +41,62 @@ This project bridges that gap.
 
 ---
 
-## Installation & Usage
+## 🛠️ Tech Stack & Architecture
+
+* **Core Framework:** React 19, Vite
+* **Environment:** Chrome Extension Manifest V3
+* **UI Components:** Material UI (MUI), Emotion
+* **AI Engine:** Google Perspective API (TensorFlow-based NLP models)
+* **DOM Handling:** Custom scraping heuristics for dynamic React UIs
+
+### ⚠️ Known Limitations & Architectural Notes
+* **DOM Fragility:** Because this extension relies on injecting into and scraping `myactivity.google.com`, minor UI updates from Google may temporarily break comment detection. 
+* **Fail-Safe Design:** If the Perspective API rate-limits the user or encounters a network error, the analyzer is designed to explicitly throw errors rather than silently passing toxic comments as "safe."
+
+---
+
+## ⚖️ Ethics & Responsible Use
+
+This tool was built with strict ethical boundaries regarding automation and moderation:
+- It analyzes **only publicly visible comments** belonging to the authenticated user.
+- **No background automation:** The tool only runs when explicitly triggered on the active page.
+- **No credential interception:** It relies entirely on the user's existing Google session.
+- Designed strictly for personal moderation awareness, research, and UI/UX design exploration.
+
+---
+
+## ⚙️ Installation & Usage
 
 ### Prerequisites
 - Google Chrome
 - Node.js (LTS recommended)
-- A Google Cloud account with billing enabled
+- A Google Cloud account with billing enabled to access the Perspective API.
 
 ### 1. Get a Perspective API Key
-- Create a project in the **Google Cloud Console**:  
-  https://console.cloud.google.com/
-- As of **12/13/2025**, access requires a developer application:  
-  https://support.perspectiveapi.com/s/request-api-access?language=en_US
-- Enable billing for the project
+1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/).
+2. *Note: Access currently requires submitting a developer application via the [Perspective API portal](https://support.perspectiveapi.com/s/request-api-access).*
+3. Enable billing for the project and generate an API key.
 
-### 2. Clone the Repository
+### 2. Build the Extension
 ```bash
-git clone https://github.com/your-username/youtube-comment-audit
+git clone [https://github.com/your-username/youtube-comment-audit](https://github.com/your-username/youtube-comment-audit)
 cd youtube-comment-audit
-```
-
-### 3. Install Dependencies and Build
-``` bash
 npm install
 npm run build
 ```
 
-### 4. Load the Extension in Chrome
-(1) Open Chrome and navigate to chrome://extensions
+### 3. Load in Chrome
+1. Open Chrome and navigate to `chrome://extensions`.
+2. Enable **Developer Mode** (top right toggle).
+3. Click **Load unpacked**.
+4. Select the `dist/` directory generated by the build step.
 
-(2) Enable Developer Mode (top right)
-
-(3) Click Load unpacked
-
-(4) Select the dist/ directory from this project
-
-### 5. Run an Audit
-(1) Open the extension
-
-(2) Paste your Perspective API key
-
-(3) Go to YouTube Activity page (myactivity.google.com)
-
-(4) Review flagged comments and confirm deletions as desired!
+### 4. Run an Audit
+1. Open the extension popup and paste your Perspective API key.
+2. Navigate to your [YouTube Activity page](https://myactivity.google.com/product/youtube_comments).
+3. Start the scan and review your flagged comments!
 
 ---
-## License
-MIT
+
+## 📄 License
+MIT License
